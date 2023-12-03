@@ -51,14 +51,19 @@ def register_command():
         
         if prefix_command == '/?':
             message = """
-            /? - list all commands
-            /join <server_ip> <port> - join the server
-            /leave - leave the server
+/? 
+-- list all commands
+/join <server_ip> <port>
+-- join the server
+/leave 
+-- leave the server
             """
 
             # print(message)
             register_status(system_output, message)
             return
+        
+        input_field.delete(0, tk.END)
     
     elif hasJoined == True:
         # allowed commands: /join, /register, /leave, /?, /dir, /store, /get, /message, /broadcast
@@ -67,6 +72,22 @@ def register_command():
             register_status(system_output, "Error: Invalid command.")
             return
         
+        if prefix_command == '/register':
+            if len(parameters) != 2:
+                # print("Error: Command parameters mismatch.")
+                register_status(system_output, "Error: Command parameters mismatch.")
+                return
+            
+            try:
+                clientsocket.sendall(command.encode())
+            except ConnectionResetError:
+                # print("Error: Connection interrupted.")
+                register_status(system_output, "Error: Connection interrupted.")
+                return
+            
+            data = clientsocket.recv(1024)
+            print(data.decode())
+
         if prefix_command == '/join':
             if len(parameters) != 3:
                 # print("Error: Command parameters mismatch.")
@@ -91,7 +112,7 @@ def register_command():
             
             # send file to server
             with open(f'client_dir/{parameters[1]}', 'rb') as f:
-                file_data = f.read(1024)
+                file_data = f.read()
                 try:
                     clientsocket.sendall((command + "/n").encode() + file_data)
                 except ConnectionResetError:
@@ -163,6 +184,33 @@ def register_command():
             clientsocket = new_clientsocket
             selector.register(clientsocket, selectors.EVENT_READ)
 
+        if prefix_command == '/?':
+            message = """
+/?
+-- list all commands
+/join <server_ip> <port>
+-- join the server
+/register <username>
+-- register a username
+/leave
+-- leave the server
+/dir
+-- list all files in server_dir
+/store <filename>
+-- store file from client_dir to server_dir
+/get <filename>
+-- retrieve file from server_dir to client_dir
+/message <client_username> <message> (30 characters limit)
+-- send message to specific client
+/broadcast <message> (30 characters limit)
+-- send message to all clients
+            """
+
+            # print(message)
+            register_status(system_output, message)
+            return
+
+        input_field.delete(0, tk.END)
     else:
         try:
             clientsocket.sendall(command.encode())
@@ -180,10 +228,34 @@ def register_status(widget, status):
     widget.config (state = tk.NORMAL)
     widget.insert (tk.END, status)
     widget.config (state = tk.DISABLED)
-            
+
+def handle_messages():
+    global clientsocket
+
+    try:
+        if clientsocket.fileno() == -1:
+            return # closed socket, do nothing
+        data = clientsocket.recv(1024)
+        if data:
+            uni_broadcast_output.config(state=tk.NORMAL)
+            uni_broadcast_output.insert(tk.END, "> " + data.decode() + "\n")
+            uni_broadcast_output.config(state=tk.DISABLED)
+    except ConnectionResetError:
+        # print("Error: Connection interrupted.")
+        register_status(system_output, "Error: Connection interrupted.")
+        return
+
+def check_messages():
+    events = selector.select(timeout=0)
+    for key, _ in events:
+        callback = key.data
+        callback()
+    root.after (1000, check_messages)
+
+
 root = tk.Tk()
 
-# root.after(1000, message_check)
+root.after(1000, check_messages)
 
 label = tk.Label(root, text="Enter a command", fg="black", font=("Helvetica", 16))
 label.grid(row=0, column=0, columnspan=2)
@@ -202,15 +274,15 @@ system_output_label.grid(row=5, column=0)
 system_output = scrolledtext.ScrolledText(root, width=40, height=25, state=tk.DISABLED)
 system_output.grid(row=6, column=0)
 
-unicast_output_label = tk.Label(root, text="Broadcast/Unicast Output", fg="black", font=("Helvetica", 16))
-unicast_output_label.grid(row=5, column=1)
+uni_broadcast_output_label = tk.Label(root, text="Broadcast/Unicast Output", fg="black", font=("Helvetica", 16))
+uni_broadcast_output_label.grid(row=5, column=1)
 
-unicast_output = scrolledtext.ScrolledText(root, width=40, height=25, state=tk.DISABLED)
-unicast_output.grid(row=6, column=1)
+uni_broadcast_output = scrolledtext.ScrolledText(root, width=40, height=25, state=tk.DISABLED)
+uni_broadcast_output.grid(row=6, column=1)
 
 root.title("CSNETWK Machine Project - Client")
 root.geometry("630x475")
 
-selector.register(clientsocket, selectors.EVENT_READ)
+selector.register(clientsocket, selectors.EVENT_READ, handle_messages)
 
 root.mainloop()
