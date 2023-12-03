@@ -1,209 +1,214 @@
-import socket, os, time, argparse
-from _thread import * 
+# Baccay, Dominic
+# Miranda, Bien
+# Rana, Luis
 
-# create a socket object
+# CSNETWK S12 - Machine Project
+
+import socket, time, os, argparse
+from _thread import *
+
+# Create a socket object
 serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# socket,AF_INET = address family of IPv4
-# socket.SOCK_STREAM = TCP socket
 
-serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
-# SOL_SOCKET = Socket option level
-# SO_REUSEADDR = Reuse socket address
-# 1 = True
+# Set the SO_REUSEADDR option on the socket
+serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-parser = argparse.ArgumentParser(description='Server script')
-parser.add_argument('--host', type=str, help='Host IP address', default='localhost')
-parser.add_argument('--port', type=int, help='Port number', default=3000)
+parser = argparse.ArgumentParser()
+parser.add_argument('--host', type=str, default='127.0.0.1')
+parser.add_argument('--port', type=int, default=12345)
 args = parser.parse_args()
 
-host = args.host
-port = args.port
+# python server.py --host 127.0.0.1 --port 12345
+# /join 127.0.0.1 12345
 
-serversocket.bind((host, port))
+# Bind to the port
+serversocket.bind((args.host, args.port))
 
-serversocket.settimeout(0.5)
+# Set socket listening timeout
+serversocket.settimeout(0.2)
 
+# Listen for incoming connections
 serversocket.listen(5)
 
+# Dictionary to store connections and client names
 clients_connected = {}
 
+# Set to store client names
 clients_registered = set()
 
+# Hashmap to keep track of commands and required number of args
 commands = {
-    '/leave': 1,        # sample: /leave
-    '/register': 2,     # sample: /register <username>
-    '/store': 2,        # sample: /store <filename>
-    '/dir': 1,          # sample: /dir
-    '/get': 2,          # sample: /get <filename>
-    '/?': 1,            # sample: /?
-    '/message': 30,     # sample: /message <client> <message>
-    '/broadcast': 30,   # sample: /broadcast <message>
+    '/leave':1,     # sample: /leave
+    '/register':2,  # sample: /register <handle>
+    '/store':2,     # sample: /store <filename>
+    '/dir':1,       # sample: /dir
+    '/get':2,       # sample: /get <filename>
+    '/?':1,         # sample: /?
+    '/pm':32,       # sample: /pm <handle> <message_string(up to 30 words)>
+    '/shout':32     # sample: /shout <message_string(up to 30 words)>
 }
 
 def client_thread(connection):
-    print('Client connected')
-    
+    # Initialize connected as True
     connected = True
-    client_name = None
+    client_name = ''
     clients_connected[connection] = client_name
-    
-    print(clients_connected) # for debugging purposes
 
-    while connected: 
+    print(clients_connected)
+
+    while connected:
         try:
+            # Receive the command input
             command = connection.recv(1024).decode()
         except ConnectionResetError:
-            print('Client disconnected')
-            break # close connection if client has disconnected
-        except OSError as e:
-            print(f"OSError: {e}")
+            # Connection forcibly closed by remote host
             break
 
         command_args = command.split('\n')[0].split()
 
-        print(repr(command), command_args) # for debugging purposes
+        print(repr(command), command_args)
 
-        # if command does not exist, send error message
-        if not (command_args[0] in commands):
-            connection.sendall('Invalid command'.encode())
+        # If the command is a command and the length of the command_args is not equal to the required number of parameters for the command then send an error message
+        if command_args[0] in commands and len(command_args) != commands[command_args[0]]:
+            if (command_args[0] == '/pm' or command_args[0] == '/shout') and len(command_args) <= 32:
+              pass
+            elif (command_args[0] == '/pm' or command_args[0] == '/shout') and not (len(command_args) <= 32):
+              connection.sendall(f"Error: There is a limit of 30 words.".encode())
+              continue
+            else:
+              connection.sendall(f"Error: Command parameters mismatch.".encode())
+              continue
+        elif not (command_args[0] in commands):
+            connection.sendall(f"Error: Command not found.".encode())
             continue
 
-        # if command exists and length of command_args != to required number of arguments, send error message
-        elif command_args[0] in commands and len(command_args) != commands[command_args[0]]:
-            # validation for /message and /broadcast, limit message to 30 characters
-            if command_args[0] in ['/message', '/broadcast'] and len(command_args) > 30:
-                connection.sendall('Error: 30 characters limit exceeded.'.encode())
-                continue
-            else:
-                connection.sendall('Error: Command parameters mismatch.'.encode())
-                continue
-        
-        # check if client has already registered a name
+        # Check if the client has registered a name
         if not (client_name in clients_registered):
-            # if not, only allow /register, /leave, and /? commands
-            if command_args[0] not in ['/register', '/leave', '/?']:
-                connection.sendall('Error: Please register a name first.'.encode())
+            # If the client has not registered a name, only allow /register and /? commands
+            if command_args[0] not in ['/register', '/?', '/leave']:
+                # Quick workaround for the error message display issue for /get until redesigned
+                if command_args[0] == '/get':
+                    connection.sendall(b'0')
+                connection.sendall(f"Error: You must register a username before executing other commands.".encode())
                 continue
         else:
-            # if already registered and command is /register, send error message
-            if command_args[0] in ['/register']:
-                connection.sendall('Error: You have already registered a name.'.encode())
+            if command_args[0] == '/register':
+                connection.sendall(f"Error: You have already registered a username.".encode())
                 continue
 
         match command_args[0]:
-            case '/leave':
+            case "/register":
+                client_name = command_args[1]
+                if (client_name in clients_registered) or client_name is None: # Check if the client name is already in use or invalid
+                    print(f"Debugging: Client name {client_name} is already in use or invalid.") # debugging
+                    connection.sendall(f"Error: Registration failed. Handle or alias already exists.".encode()) # Send error message to the client upon failed registration
+                else:
+                    print(f"Debugging: Client registered as {client_name}") # debugging
+                    connection.sendall(f"Welcome {client_name}!".encode()) # Send success message to the client upon successful registration
+                    clients_connected[connection] = client_name # Add the client to the dictionary of connected clients
+                    clients_registered.add(client_name) # Add the client name to the set of registered clients
+            case "/leave":
+                # Send success message to the client upon disconnection
                 connection.sendall(f"Connection closed.".encode())
-                broadcast_message(f"{client_name} has left the server.")
 
-                # remove client
+                # Remove the client from the dictionary of connected clients
                 clients_connected.pop(connection)
                 if client_name in clients_registered:
                     clients_registered.remove(client_name)
-                connection = False
-
-            case '/register':
-                client_name = command_args[1] 
-                # username validation
-                if client_name is None:
-                    connection.sendall('Error: Please enter a valid username.'.encode())
-                elif client_name in clients_registered:
-                    connection.sendall('Error: Username already taken.'.encode())
-                else:
-                    clients_connected[connection] = client_name
-                    clients_registered.add(client_name)
-                    connection.sendall(f"Successfully registered as {client_name}.".encode())
-                    broadcast_message(f"{client_name} has joined the server.")
-
-            case '/dir': # list all files in server_dir
-                files = os.listdir('server_dir')
+                connected = False
+            case "/dir":
+                # Get the list of all files in the directory
+                files = os.listdir("server_dir")
+                # Send the list of files to the client separated by a newline with a label that says Server Directory:
                 connection.sendall("Server Directory:\n".encode()+"\n".join(files).encode())
-
-            case '/store': # from client_dir to server_dir
+            case "/store":
                 file_name = command_args[1]
+                # Receive the file from the client
                 file_data = ('\n'.join(command.split('\n')[1:])).encode()
+                # Open the file in binary mode
                 with open(f"server_dir/{file_name}", 'wb') as f:
                     f.write(file_data)
-                    print(f"Successfully stored {file_name} in server_dir.")
-                
-                # get timestamp in format: 2023-11-06 16:48:05
-                time_stamp = os.path.getmtime(f"server_dir/{file_name}")
-                convert_time = time.localtime(time_stamp)
-                readable_time = time.strftime("%Y-%m-%d %H:%M:%S", convert_time)
+                    print(f"Debugging: File {file_name} received and saved.") # debugging
 
-                connection.sendall(f"{client_name}<{readable_time}>: Uploaded {file_name}".encode())
-                broadcast_message(f"{client_name}<{readable_time}>: Uploaded {file_name}")
+                # Get timestamp of the file (last modified)
+                timestamp = os.path.getmtime(f"server_dir/{file_name}")
+                format_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
 
-            case '/get': # from server_dir to client_dir
+                # Send success message to the client upon storing
+                connection.sendall(f"{client_name}<{format_time}>: Uploaded {file_name}".encode())     
+            case "/get":
                 file_name = command_args[1]
-                
-                files = os.listdir('server_dir')
-
-                if file_name not in files:
-                    connection.sendall(b'0') # send 0 if file does not exist
-                    connection.sendall(f"Error: {file_name} does not exist in the server.".encode())
-                    continue
-                
-                with open(f"server_dir/{file_name}", 'rb') as f:
-                    file_data = f.read()
-                    connection.sendall(b'1') # send 1 if file exists
-                    connection.sendall(file_data)
-                    print(f"Successfully retrieved {file_name} from server_dir.")
-
-            case '/?': # list all commands
-                message = """
-/? - list all commands
-/join <server_ip_> <port> - join the server
-/register <username> - register a username
-/dir - list all files in server_dir
-/store <filename> - store file from client_dir to server_dir
-/get <filename> - retrieve file from server_dir to client_dir
-/message <client_username> <message> (30 characters limit) - send message to specific client
-/broadcast <message> (30 characters limit) - send message to all clients
-/leave - leave the server
-                """
-
-                connection.sendall(message.encode())
-
-            case '/message': # send message to specific client
-                to_client = command_args[1]
+                # Get the list of all files in the directory
+                files = os.listdir("server_dir")
+                # Check if the file exists in the directory
+                if file_name in files:
+                    # Open the file in binary mode
+                    with open(f"server_dir/{file_name}", 'rb') as f:
+                        # Read the file
+                        file_data = f.read()
+                        # Send the header first
+                        connection.sendall(b'1') # '1' indicates that file data will follow
+                        # Send the file to the client
+                        connection.sendall(file_data)
+                else:
+                    # Send the header first
+                    connection.sendall(b'0') # '0' indicates that an error message will follow
+                    # Send error message to the client upon file not found
+                    connection.sendall(f"Error: File not found in the server.".encode())
+            case "/pm":
+                # Send the message to another client
+                recipient = command_args[1]
                 message = ' '.join(command_args[2:])
 
-                if to_client not in clients_registered:
-                    connection.sendall(f"Error: {to_client} is not registered.".encode())
-
-                for client_conn, check_to_client in clients_connected.items():
-                    if check_to_client == to_client:
-                        connection.sendall(f"To {to_client}: {message}".encode())
-                        client_conn.sendall(f"From {client_name}: {message}".encode())
-                    else:
-                        # if invalid to_client, send error message
-                        connection.sendall(f"Error: {to_client} is not connected.".encode())
-
-            case '/broadcast': # send message to all clients
+                # Check if the recipient is registered in the server
+                if recipient in clients_registered:
+                    # Send the message to the recipient
+                    for client_connection, recipient_name in clients_connected.items():
+                        if recipient_name == recipient:
+                            connection.sendall(f"To {recipient}: {message}".encode())
+                            client_connection.sendall(f"From {client_name}: {message}".encode())
+                else:
+                    # Send error message to the client upon an invalid recipient
+                    connection.sendall(f"Error: Recipient not found.".encode())
+            case "/shout":
                 message = ' '.join(command_args[1:])
-                broadcast_message(f"Broadcast from {client_name}: {message}")   
+                # Send the broadcast message to all clients
+                shout_message(f"Shouted by {client_name}: {message}")
+            case "/?":
+                message = """
+Commands:
+/?
+/join <server_IP> <port>
+/leave
+/register <username>
+/store <filename>
+/dir
+/get <filename>
+/pm <username> <message>
+/shout <message>\n
+"""
+                connection.sendall(message.encode()) 
+            case _: # if none of the above commands are matched
+                # Send an error message to the client upon an invalid command
+                connection.sendall(f"Error: Command not found.".encode())
 
-            case _: # if command does not exist, send error message
-                connection.sendall('Error: Invalid command.'.encode())
+    # Remove the client from connected clients
+    clients_connected.pop(connection)
+    if client_name in clients_registered:
+        clients_registered.remove(client_name)
+    connection.close()
 
-        # remove client when connection is closed
-        clients_connected.pop(connection)
-        if client_name in clients_registered:
-            clients_registered.remove(client_name)
-        connection.close()
-            
-
-def broadcast_message(message):
-    for client in clients_connected:
+def shout_message(message):
+    for client_connection, client_name in clients_connected.items():
         try:
-            client.sendall(message.encode())
+            client_connection.sendall(message.encode())
         except Exception as e:
-            print(f"Failed to send message to {client}: {e}")
+            print(f"Failed to send message to {client_connection}: {e}")
 
 while True:
-    # establish connection with client
+    # Establish a connection with the client
     try:
-        connection, addr = serversocket.accept()
-        start_new_thread(client_thread, (connection,))
+        clientsocket, addr = serversocket.accept()
+        start_new_thread(client_thread, (clientsocket, ))
     except TimeoutError:
         pass

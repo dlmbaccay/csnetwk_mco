@@ -1,288 +1,237 @@
-import socket, os, selectors, tkinter as tk
-from tkinter import scrolledtext
+# Baccay, Dominic
+# Miranda, Bien
+# Rana, Luis
 
-# create a socket object
-clientsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# CSNETWK S12 - Machine Project
+
+import socket, os, selectors, tkinter as tk
+from tkinter import scrolledtext, Label, font, Entry, Button
+
+# Create a socket object
+c_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 selector = selectors.DefaultSelector()
 
 hasJoined = False
 
 def register_command():
-    global hasJoined, clientsocket
+  global hasJoined, c_socket # c_socket is the socket object for the client connection to the server
+  # Get the command from the input field
+  command = input_field.get()
 
-    command = input_field.get()
+  # Don't send if the command is empty
+  if not len(command): return
 
-    if not len(command):
-        return # do nothing if command is empty
+  parameters = command.split()
+  command_0 = parameters[0]
+
+  if hasJoined == False:
+    # Make sure the command is valid
+    if command_0 not in ("/join", "/leave", "/register", "/store", "/dir", "/get", "/?", "/pm", "/shout"):
+      register_status(system_output, "Error: Command not found.\n")
+      input_field.delete(0, 'end')
+      return
     
-    parameters = command.split()
-    prefix_command = parameters[0]
-
-    if hasJoined == False:
-        # allow /join, /leave, /? initially
-        if (prefix_command not in ['/join', '/leave', '/?']):
-            # print("Error: Please join the server first.")
-            register_status(system_output, "Error: Please join the server first.")
-            input_field.delete(0, tk.END)
-            return
-        
-        if prefix_command == '/join':
-            if len(parameters) != 3:
-                # print("Error: Command parameters mismatch.")
-                register_status(system_output, "Error: Command parameters mismatch.")
-                return
-
-            try:
-                # connect to server
-                clientsocket.connect((parameters[1], int(parameters[2])))
-                # selector.register(clientsocket, selectors.EVENT_READ) # for reading data from server
-                # print("Successfully joined the server.")
-                register_status(system_output, "Successfully joined the server.")
-                hasJoined = True
-            except socket.error:
-                # print("Error: ", e)
-                register_status(system_output, f"Error: Connection interrupted.")
-                return
-            
-        if prefix_command == '/leave':
-            # print("Error: You have not joined the server yet.")
-            register_status(system_output, "Error: You have not joined the server yet.")
-            return
-        
-        if prefix_command == '/?':
-            message = """
-/? 
--- list all commands
-/join <server_ip> <port>
--- join the server
-/leave 
--- leave the server
-            """
-
-            # print(message)
-            register_status(system_output, message)
-            return
-        
-        input_field.delete(0, tk.END)
-    
-    elif hasJoined == True:
-        # allowed commands: /join, /register, /leave, /?, /dir, /store, /get, /message, /broadcast
-        if prefix_command not in ['/join', '/register', '/leave', '/?', '/dir', '/store', '/get', '/message', '/broadcast']:
-            # print("Error: Invalid command.")
-            register_status(system_output, "Error: Invalid command.")
-            return
-        
-        if prefix_command == '/register':
-            if len(parameters) != 2:
-                # print("Error: Command parameters mismatch.")
-                register_status(system_output, "Error: Command parameters mismatch.")
-                return
-            
-            try:
-                clientsocket.sendall(command.encode())
-            except ConnectionResetError:
-                # print("Error: Connection interrupted.")
-                register_status(system_output, "Error: Connection interrupted.")
-                return
-            
-            data = clientsocket.recv(1024)
-            print(data.decode())
-
-        if prefix_command == '/join':
-            if len(parameters) != 3:
-                # print("Error: Command parameters mismatch.")
-                register_status(system_output, "Error: Command parameters mismatch.")
-                return
-            else:
-                # print("Error: You have already joined the server.")
-                register_status(system_output, "Error: You have already joined the server.")
-                return
-        
-        if prefix_command == '/store':
-            if len(parameters) != 2:
-                # print("Error: Command parameters mismatch.")
-                register_status(system_output, "Error: Command parameters mismatch.")
-                return
-            
-            files = os.listdir('client_dir')
-            if parameters[1] not in files:
-                # print("Error: File does not exist.")
-                register_status(system_output, "Error: File does not exist.")
-                return
-            
-            # send file to server
-            with open(f'client_dir/{parameters[1]}', 'rb') as f:
-                file_data = f.read()
-                try:
-                    clientsocket.sendall((command + "/n").encode() + file_data)
-                except ConnectionResetError:
-                    # print("Error: Connection interrupted.")
-                    register_status(system_output, "Error: Connection interrupted.")
-                    return
-                
-                data = clientsocket.recv(1024)
-                if data == b'1':
-                    # print(f"Successfully stored {parameters[1]} to server_dir.")
-                    register_status(system_output, f"Successfully stored {parameters[1]} to server_dir.")
-                else:
-                    # print("Error: Failed to store file to server_dir.")
-                    register_status(system_output, "Error: Failed to store file to server_dir.")
-                    return
-        
-        if prefix_command == '/get':
-            if len(parameters) != 2:
-                # print("Error: Command parameters mismatch.")
-                register_status(system_output, "Error: Command parameters mismatch.")
-                return
-            
-            try:
-                clientsocket.sendall(command.encode())
-            except ConnectionResetError:
-                # print("Error: Connection interrupted.")
-                register_status(system_output, "Error: Connection interrupted.")
-                return
-            
-            header = clientsocket.recv(1024)
-
-            if header == b'0':
-                print("Error: File does not exist.")
-                return
-            elif header == b'1':
-                file_data = clientsocket.recv(1024)
-                with open(f'client_dir/{parameters[1]}', 'wb') as f:
-                    f.write(file_data)
-                    # print(f"Successfully retrieved {parameters[1]} from server_dir.")
-                    register_status(system_output, f"Successfully retrieved {parameters[1]} from server_dir.")
-            else:
-                # print("Error: Failed to retrieve file from server_dir.")
-                register_status(system_output, "Error: Failed to retrieve file from server_dir.")
-                return
-            
-        if prefix_command == '/leave':
-            if len(parameters) != 1:
-                print("Error: Command parameters mismatch.")
-                return
-            
-            clientsocket.sendall(command.encode())
-
-            data = clientsocket.recv(1024)
-            if data == b'1':
-                # print("Successfully left the server.")
-                register_status(system_output, "Successfully left the server.")
-                hasJoined = False
-            else:
-                # print("Error: Failed to leave the server.")
-                register_status(system_output, "Error: Failed to leave the server.")
-                return
-            
-            # create a new socket object
-            new_clientsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-            # unregister old socket object and register new socket
-            selector.unregister(clientsocket)
-            clientsocket.close()
-            clientsocket = new_clientsocket
-            selector.register(clientsocket, selectors.EVENT_READ)
-
-        if prefix_command == '/?':
-            message = """
-/?
--- list all commands
-/join <server_ip> <port>
--- join the server
-/register <username>
--- register a username
-/leave
--- leave the server
-/dir
--- list all files in server_dir
-/store <filename>
--- store file from client_dir to server_dir
-/get <filename>
--- retrieve file from server_dir to client_dir
-/message <client_username> <message> (30 characters limit)
--- send message to specific client
-/broadcast <message> (30 characters limit)
--- send message to all clients
-            """
-
-            # print(message)
-            register_status(system_output, message)
-            return
-
-        input_field.delete(0, tk.END)
-    else:
+    # Check if the command is /join
+    if command_0 == "/join":
+      # make sure correct number of arguments
+      if len(parameters) != 3:
+        register_status(system_output, "Error: Command parameters mismatch.\n")
+      else:
         try:
-            clientsocket.sendall(command.encode())
-        except ConnectionResetError:
-            # print("Error: Connection interrupted.")
-            register_status(system_output, "Error: Connection interrupted.")
+          # Connect to the server, all_words[1] is the IP address, all_words[2] is the port
+          c_socket.connect((parameters[1], int(parameters[2])))
+          register_status(system_output, "Successfully connected to the File Exchange Server\n")
+          # system_output.insert("1.0", "Connection to the File Exchange Server is successful!\n")
+          hasJoined = True
+        except socket.error:
+          register_status(system_output, "Error: Connection to server failed! Check if parameters are correct.\n")
+    elif command_0 == "/leave":
+      register_status(system_output, "Error: Server connection is not established, please connect to the server first.\n")
+    elif command_0 == "/register" or command_0 == "/store" or command_0 == "/dir" or command_0 == "/get" or command_0 == "/pm" or command_0 == "/shout":
+      register_status(system_output, "Error: Server connection is not established, please connect to the server first.\n")
+    elif command_0 == "/?":
+      message = """
+Commands:
+/?
+/join <server_IP> <port>
+/leave
+/register <username>
+/store <filename>
+/dir
+/get <filename>
+/pm <username> <message>
+/shout <message>\n
+"""
+      register_status(system_output, message)
+
+  elif hasJoined == True:
+    # Make sure the command is valid
+    if command_0 not in ("/join", "/leave", "/register", "/store", "/dir", "/get", "/?", "/pm", "/shout"):
+      register_status(system_output, "Error: Command not found.\n")
+      input_field.delete(0, 'end')
+      return
+
+    # Check if the command is /join
+    if command_0 == "/join":
+      # make sure correct number of arguments
+      if len(parameters) != 3:
+        register_status(system_output, "Error: Command parameters mismatch.\n")
+      else:
+        register_status(system_output, "Error: Server connection is already established.\n")
+    else:
+      if command_0 == "/store":
+        if len(parameters) == 2: # valid number of parameters
+          files = os.listdir("client_dir")
+          if parameters[1] in files:
+            with open(f"client_dir/{parameters[1]}", 'rb') as f:
+              file_data = f.read()
+              try:
+                c_socket.sendall((command + "\n").encode() + file_data)
+              except ConnectionResetError:
+                register_status(system_output, 'Error: Server connection was interrupted.\n')
+
+            data = c_socket.recv(1024)
+            register_status(system_output, data.decode()+"\n") # Print the data received from the server
+          else:
+            register_status(system_output, "Error: File not found.\n")
+        else:
+          register_status(system_output, "Error: Command parameters mismatch.\n")
+      elif command_0 == "/get":
+        if len(parameters) == 2: # valid number of parameters
+          try:
+            c_socket.sendall(command.encode())
+          except ConnectionResetError:
+            register_status(system_output, 'Error: Server connection was interrupted.\n')
+
+          header = c_socket.recv(1)
+
+          if header == b'1':
+            file_data = c_socket.recv(1024)
+            with open(f"client_dir/{parameters[1]}", 'wb') as f:
+              f.write(file_data)
+            register_status(system_output, f"File received from Server: {parameters[1]}\n") # Print the data received from the server
+          else:
+            data = c_socket.recv(1024)
+            print(f"{data.decode()}")
+            register_status(system_output, data.decode()+"\n") # Print the data received from the server
+        else:
+          register_status(system_output, "Error: Command parameters mismatch.\n")
+      elif command_0 == "/leave":
+        if len(parameters) == 1: # valid number of parameters
+          c_socket.sendall(command.encode()) # Send the command to the server
+
+          data = c_socket.recv(1024)
+          register_status(system_output, data.decode()+"\n") # Print the data received from the server
+          hasJoined = False
+        
+          new_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Create a new socket object
+          selector.unregister(c_socket) # Unregister the socket from the selector
+          c_socket.close() # Close the socket
+          c_socket = new_s # Set the socket to the new socket object
+          selector.register(c_socket, selectors.EVENT_READ, handle_messages) # Register the socket to the selector
+        else:
+          register_status(system_output, "Error: Command parameters mismatch.\n")
+      elif command_0 == "/pm":
+        if len(parameters) >= 3 and len(parameters) <= 32:
+          message = ' '.join(parameters[2:])
+          c_socket.sendall(f"{command_0} {parameters[1]} {message}".encode())
+        else:
+          register_status(system_output, "Error: Command parameters mismatch.\n")
+      elif command_0 == "/shout":
+        if len(parameters) >= 2 and len(parameters) <= 32:
+          message = ' '.join(parameters[1:])
+          c_socket.sendall(f"{command_0} {message}".encode())
+        else:
+          register_status(system_output, "Error: Command parameters mismatch.\n")
+      else: # If the command is /register, /dir, or /?
+        try:
+          c_socket.sendall(command.encode())
+        except ConnectionResetError: # If the server was closed or the connection was interrupted
+          register_status(system_output, 'Error: Connection interrupted.\n')
+
+        data = c_socket.recv(1024) # Receive data from the socket
+        register_status(system_output, data.decode()+"\n")
+
+  input_field.delete(0, 'end') # Clear the input field
+
+# Function to register the status of the system
+def register_status(widget, text):
+  widget.config (state = tk.NORMAL)
+  widget.insert (tk.END, text)
+  widget.config (state = tk.DISABLED)
+
+# Function to handle messages from the server
+def handle_messages():
+    global c_socket
+    try:
+        if c_socket.fileno() == -1:
             return
         
-        data = clientsocket.recv(1024)
-        print(data.decode())
-
-    input_field.delete(0, tk.END)
-    
-def register_status(widget, status):
-    widget.config (state = tk.NORMAL)
-    widget.insert (tk.END, status)
-    widget.config (state = tk.DISABLED)
-
-def handle_messages():
-    global clientsocket
-
-    try:
-        if clientsocket.fileno() == -1:
-            return # closed socket, do nothing
-        data = clientsocket.recv(1024)
-        if data:
-            uni_broadcast_output.config(state=tk.NORMAL)
-            uni_broadcast_output.insert(tk.END, "> " + data.decode() + "\n")
-            uni_broadcast_output.config(state=tk.DISABLED)
+        data = c_socket.recv(1024)
+        
+        if data: # If data is received
+            message_output.config(state=tk.NORMAL)
+            message_output.insert(tk.END, data.decode() + "\n")
+            message_output.config(state=tk.DISABLED)
     except ConnectionResetError:
-        # print("Error: Connection interrupted.")
-        register_status(system_output, "Error: Connection interrupted.")
-        return
+        pass
 
+# Function to check for messages from the server
 def check_messages():
     events = selector.select(timeout=0)
-    for key, _ in events:
+    for key, _ in events: # For each socket that has a message ready to be read
         callback = key.data
         callback()
-    root.after (1000, check_messages)
+    root.after(1000, check_messages)
 
-
+# Create the main window
 root = tk.Tk()
 
+# Start checking for messages
 root.after(1000, check_messages)
 
-label = tk.Label(root, text="Enter a command", fg="black", font=("Helvetica", 16))
-label.grid(row=0, column=0, columnspan=2)
+# Set the font
+verdana = font.Font(family='Verdana', size=10)
 
-input_field = tk.Entry(root)
-input_field.grid(row=3, column=0, columnspan=2)
+# input field/label
 
-send_button = tk.Button(root, text="Send", command=register_command)
-send_button.grid(row=4, column=0, columnspan=2)
+input_field_label= Label(root, text="Register a command", fg='black', font=verdana)
+input_field_label.grid(row=0, column=0, columnspan=2)
 
-# system_output and unicast/broadcast_output
+input_field = Entry(root)
+input_field.grid(row=1, column=0, columnspan=2)
 
-system_output_label = tk.Label(root, text="System Output", fg="black", font=("Helvetica", 16))
-system_output_label.grid(row=5, column=0)
+# send button
+send_button = Button(root, text="Send", command=register_command)
+send_button.grid(row=2, column=0, columnspan=2)
+root.bind('<Return>', lambda event=None: send_button.invoke()) # Bind the enter key to the send button
 
-system_output = scrolledtext.ScrolledText(root, width=40, height=25, state=tk.DISABLED)
-system_output.grid(row=6, column=0)
+# commands label
+commands_label = Label(root, text="/? : show command list", fg='black', font=verdana)
+commands_label.grid(row=3, column=0, columnspan=2)
 
-uni_broadcast_output_label = tk.Label(root, text="Broadcast/Unicast Output", fg="black", font=("Helvetica", 16))
-uni_broadcast_output_label.grid(row=5, column=1)
+# system output/label
+system_output_label = Label(root, text="System:", fg='black', font=verdana)
+system_output_label.grid(row=4, column=0)
 
-uni_broadcast_output = scrolledtext.ScrolledText(root, width=40, height=25, state=tk.DISABLED)
-uni_broadcast_output.grid(row=6, column=1)
+system_output = scrolledtext.ScrolledText(root, fg='black', font=verdana, state="disabled", width=50, height=30)
+system_output.grid(row=5, column=0)
 
-root.title("CSNETWK Machine Project - Client")
-root.geometry("630x475")
+# message output/label
+message_output_label = Label(root, text="Messages:", fg='black', font=verdana)
+message_output_label.grid(row=4, column=1)
 
-selector.register(clientsocket, selectors.EVENT_READ, handle_messages)
+message_output = scrolledtext.ScrolledText(root, fg='black', font=verdana, state="disabled", width=50, height=30)
+message_output.grid(row=5, column=1)
 
+# Set the window title, size, and position
+root.title('File Exchange System - Client')
+root.geometry("850x600")
+root.resizable(False, False)
+root.eval('tk::PlaceWindow . center')
+
+# Register the socket to the selector
+selector.register(c_socket, selectors.EVENT_READ, handle_messages) 
+
+# Start the GUI
 root.mainloop()
