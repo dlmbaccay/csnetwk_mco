@@ -30,13 +30,13 @@ serversocket.settimeout(0.2)
 # Listen for incoming connections
 serversocket.listen(5)
 
-# Dictionary to store connections and client names
+# connected clients
 clients_connected = {}
 
-# Set to store client names
+# connected & registered clients
 clients_registered = set()
 
-# Hashmap to keep track of commands and required number of args
+# argument validation for commands
 commands = {
     '/leave':1,     # sample: /leave
     '/register':2,  # sample: /register <handle>
